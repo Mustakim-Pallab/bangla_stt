@@ -1,0 +1,20 @@
+services:
+  ai4bharat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai4bharat
+    image: ai4bharat_model
+    tty: true
+    ports:
+      - "7001:7001"
+    networks:
+      - sts-net
+    volumes:
+      - ../ai4bharat:/ai4bharat
+    restart: unless-stopped
+
+networks:
+  sts-net:
+    name: sts-net
+    external: true
