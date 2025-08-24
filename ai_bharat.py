@@ -1,8 +1,10 @@
-from typing import Any
+import io
+from typing import Optional
 
 import numpy as np
 import torch
-from fastapi import FastAPI
+import torchaudio
+from fastapi import FastAPI, UploadFile, Form
 from pydantic import BaseModel
 from transformers import AutoModel
 
@@ -12,43 +14,39 @@ model = AutoModel.from_pretrained("ai4bharat/indic-conformer-600m-multilingual",
 app = FastAPI()
 
 
-class TranscriptionRequest(BaseModel):
-    audio: Any
-    language: str = "bn"
-    tokenizer: str = "rnnt"
-
-
 @app.post("/transcribe")
 async def transcribe_audio(
-        request: TranscriptionRequest
+    file: UploadFile,
+    language: str = Form("bn"),
 ):
-    if isinstance(request.audio, list):
-        print("Transcribing from list of audio samples")
-        request.audio = np.array(request.audio, dtype=np.float32)
-        print(request.audio)
+    # Read uploaded file
+    contents = await file.read()
 
-    wav = torch.from_numpy(request.audio).unsqueeze(0).float()
-    # torchaudio.save("output.wav", wav, sample_rate=16000)
-    wav = torch.mean(wav, dim=0, keepdim=True)
-    print(wav)
+    # Load audio into torch tensor
+    wav, sr = torchaudio.load(io.BytesIO(contents))
 
-    # torchaudio.save("output_1.wav", wav, sample_rate=16000)
+    # Convert stereo → mono
+    if wav.shape[0] > 1:
+        wav = torch.mean(wav, dim=0, keepdim=True)
 
-    print("Running inference...")
-    import time
-    start_time = time.time()
-    transcription_ctc = model(wav, request.language, request.tokenizer)
-    end_time = time.time()
-    duration = end_time - start_time
-    print("Duration:", duration)
-    print("CTC Transcription:", transcription_ctc)
+    # Resample if needed
+    target_sample_rate = 16000
+    if sr != target_sample_rate:
+        resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=target_sample_rate)
+        wav = resampler(wav)
+
+    # Run inference (CTC)
+    transcription_ctc = model(wav, language, "ctc")
+
+    # Run inference (RNNT)
+    transcription_rnnt = model(wav, language, "rnnt")
+
     return {
-        "text": transcription_ctc,
-        "language": request.language
+        "language": language,
+        "ctc_transcription": transcription_ctc,
+        "rnnt_transcription": transcription_rnnt,
     }
-
 
 if __name__ == "__main__":
     import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=7001)
+    uvicorn.run(app, host="0.0.0.0", port=7002)

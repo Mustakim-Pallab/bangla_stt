@@ -4,10 +4,10 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ai4bharat
-    image: ai4bharat_model
+    image: ai4bharat_model_1
     tty: true
     ports:
-      - "7001:7001"
+      - "7002:7002"
     networks:
       - sts-net
     volumes:
